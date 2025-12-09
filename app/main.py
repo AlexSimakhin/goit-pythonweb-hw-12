@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 from app.database import Base, engine
 from app.routers import contact, user
@@ -35,6 +36,7 @@ app = FastAPI(
     description="API for managing contacts",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs",
 )
 """FastAPI application instance for the Contacts REST API."""
 
@@ -45,6 +47,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve Sphinx HTML docs (built into docs/_build) at the root path '/'
+_docs_dir = os.path.join(os.path.dirname(__file__), '..', 'docs', '_build')
+if os.path.isdir(_docs_dir):
+    app.mount("/", StaticFiles(directory=_docs_dir, html=True), name="sphinx-docs")
 
 # Register the contacts router providing CRUD endpoints under /contacts.
 app.include_router(contact.router)
