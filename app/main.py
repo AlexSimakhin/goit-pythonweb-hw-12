@@ -48,10 +48,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve Sphinx HTML docs (built into docs/_build) at the root path '/'
+# Serve Sphinx HTML docs (built into docs/_build). Avoid mounting at root during tests,
+# otherwise it shadows API routes and results in 405 for POST endpoints.
 _docs_dir = os.path.join(os.path.dirname(__file__), '..', 'docs', '_build')
 if os.path.isdir(_docs_dir):
-    app.mount("/", StaticFiles(directory=_docs_dir, html=True), name="sphinx-docs")
+    if os.environ.get('TESTING') == '1':
+        # When testing, expose Sphinx under /sphinx only
+        app.mount("/sphinx", StaticFiles(directory=_docs_dir, html=True), name="sphinx-docs")
+    else:
+        # In normal runs, serve Sphinx at root path
+        app.mount("/", StaticFiles(directory=_docs_dir, html=True), name="sphinx-docs")
 
 # Register the contacts router providing CRUD endpoints under /contacts.
 app.include_router(contact.router)
