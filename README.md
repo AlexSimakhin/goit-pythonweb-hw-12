@@ -3,7 +3,7 @@
 A modern FastAPI service for managing contacts with authentication (JWT) and optional Redis caching.
 
 - Live docs: https://goit-pythonweb-hw-12.fly.dev/docs
-- Sphinx HTML documentation (built content): https://goit-pythonweb-hw-12.fly.dev/docs
+- Sphinx HTML documentation (built content): https://goit-pythonweb-hw-12.fly.dev
 - Admin user (test): username/password `admin`
 - SMTP: Mailtrap sandbox (emails visible only in sandbox) *Current stage
 
