@@ -11,8 +11,8 @@ class UserCreate(BaseModel):
     password: str
 
     @field_validator("password")
-    @classmethod
-    def password_length(cls, v):
+    @staticmethod
+    def password_length(v: str) -> str:
         """Validate that the password is no longer than 72 bytes (bcrypt limit)."""
         if len(v.encode("utf-8")) > 72:
             raise ValueError("Password must be 72 bytes or fewer.")
@@ -31,15 +31,14 @@ class UserOut(BaseModel):
     is_active: bool
     is_verified: bool
     avatar_url: Optional[str] = None
-
-    class Config:
-        """Pydantic config for ORM mode."""
-        from_attributes = True
+    role: str = "user"
+    model_config = {"from_attributes": True}
 
 class Token(BaseModel):
     """Schema for JWT token response."""
     access_token: str
     token_type: str
+    refresh_token: str | None = None
 
 class TokenData(BaseModel):
     """Schema for token data payload."""

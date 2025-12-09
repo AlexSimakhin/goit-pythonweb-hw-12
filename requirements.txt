@@ -11,3 +11,7 @@ email-validator
 cloudinary
 slowapi
 python-multipart
+pytest
+pytest-cov
+redis
+httpx

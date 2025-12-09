@@ -9,7 +9,27 @@ from app.database import Base
 
 
 class Contact(Base):
-    """SQLAlchemy model for storing contact information."""
+    """SQLAlchemy model for storing contact information.
+
+    Attributes
+    ----------
+    id : int
+        Primary key.
+    first_name : str
+        Contact's first name.
+    last_name : str
+        Contact's last name.
+    email : str
+        Unique email address of the contact.
+    phone : str
+        Phone number.
+    birthday : date
+        Birthday date.
+    extra : str | None
+        Optional extra notes.
+    user_id : int
+        Foreign key referencing the owner user.
+    """
 
     __tablename__ = 'contacts'
 

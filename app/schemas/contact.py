@@ -8,8 +8,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 class ContactBase(BaseModel):
     """Base schema for contact information."""
-    first_name: str = Field(..., example="John")
-    last_name: str = Field(..., example="Doe")
+    first_name: str = Field(..., json_schema_extra={"example": "John"})
+    last_name: str = Field(..., json_schema_extra={"example": "Doe"})
     email: EmailStr
     phone: str
     birthday: date
@@ -27,7 +27,4 @@ class ContactUpdate(ContactBase):
 class ContactOut(ContactBase):
     """Schema for outputting contact information."""
     id: int
-
-    class Config:
-        """Pydantic config for ORM mode."""
-        from_attributes = True
+    model_config = {"from_attributes": True}

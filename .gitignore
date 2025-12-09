@@ -2,3 +2,10 @@ __pycache__
 .env
 .venv
 .vscode
+
+test.db
+.pytest_cache
+.coverage
+
+/docs/_build
+/docs/_static

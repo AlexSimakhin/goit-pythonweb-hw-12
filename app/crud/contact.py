@@ -15,171 +15,273 @@ from app.schemas.contact import ContactCreate, ContactUpdate
 from app.utils.auth import decode_access_token
 
 
+def _get_user_id(token: str) -> int:
+    """Extract and validate the current user id from a JWT access token.
+
+    Parameters
+    ----------
+    token : str
+        Bearer JWT access token provided by the client.
+
+    Returns
+    -------
+    int
+        The authenticated user's id.
+
+    Raises
+    ------
+    HTTPException
+        If the token is missing or invalid, or if the payload lacks a user_id.
+    """
+    payload = decode_access_token(token) if token else None
+    if not payload or not payload.get("user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing access token",
+        )
+    return int(payload["user_id"])  # enforce int
+
+
 def create_contact(db: Session, contact: ContactCreate, token: str) -> Contact:
-    """
-    Create a new contact.
+    """Create a new contact owned by the authenticated user.
 
-    Args:
-        db (Session): The database session.
-        contact (ContactCreate): The contact data to create.
-        token (str): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy database session.
+    contact : ContactCreate
+        Validated contact data to be persisted.
+    token : str
+        Bearer JWT access token of the current user.
 
-    Returns:
-        Contact: The created contact.
+    Returns
+    -------
+    Contact
+        The newly created contact ORM instance.
+
+    Raises
+    ------
+    HTTPException
+        If a contact with the same email already exists for the user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    contact_data = contact.model_dump()
-    contact_data.pop("user_id", None)
-    db_contact = Contact(**contact_data, user_id=user_id)
-    db.add(db_contact)
+    user_id = _get_user_id(token)
+    # Ensure unique email per system (or per user depending on requirements)
+    existing = db.query(Contact).filter(Contact.email == contact.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Contact with this email already exists",
+        )
+
+    obj = Contact(
+        first_name=contact.first_name,
+        last_name=contact.last_name,
+        email=contact.email,
+        phone=contact.phone,
+        birthday=contact.birthday,
+        extra=contact.extra,
+        user_id=user_id,
+    )
+    db.add(obj)
     db.commit()
-    db.refresh(db_contact)
-    return db_contact
+    db.refresh(obj)
+    return obj
 
 
 def get_contacts(db: Session, skip: int = 0, limit: int = 100, token: str = None) -> List[Contact]:
-    """
-    Get a list of contacts.
+    """List contacts for the authenticated user with pagination.
 
-    Args:
-        db (Session): The database session.
-        skip (int): Number of contacts to skip (for pagination).
-        limit (int): Maximum number of contacts to return.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    skip : int, optional
+        Number of records to skip (offset), by default 0.
+    limit : int, optional
+        Maximum number of records to return, by default 100.
+    token : str, optional
+        JWT access token. If omitted, raises 401.
 
-    Returns:
-        List[Contact]: A list of contacts.
+    Returns
+    -------
+    List[Contact]
+        A list of contacts belonging to the current user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    return db.query(Contact).filter(Contact.user_id == user_id).offset(skip).limit(limit).all()
+    user_id = _get_user_id(token)
+    return (
+        db.query(Contact)
+        .filter(Contact.user_id == user_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def get_contact(db: Session, contact_id: int, token: str = None) -> Optional[Contact]:
-    """
-    Get a contact by ID.
+    """Retrieve a single contact by id ensuring ownership.
 
-    Args:
-        db (Session): The database session.
-        contact_id (int): The ID of the contact to retrieve.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    contact_id : int
+        Primary key of the contact.
+    token : str, optional
+        JWT access token.
 
-    Returns:
-        Optional[Contact]: The contact if found, otherwise None.
+    Returns
+    -------
+    Optional[Contact]
+        The contact if found and owned by the user, otherwise raises 404.
+
+    Raises
+    ------
+    HTTPException
+        If the contact does not exist or is not owned by the user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    return db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
+    user_id = _get_user_id(token)
+    obj = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
+    if not obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+    return obj
 
 
 def update_contact(db: Session, contact_id: int, contact: ContactUpdate, token: str = None) -> Optional[Contact]:
-    """
-    Update an existing contact.
+    """Update an existing contact owned by the current user.
 
-    Args:
-        db (Session): The database session.
-        contact_id (int): The ID of the contact to update.
-        contact (ContactUpdate): The new contact data.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    contact_id : int
+        Contact id.
+    contact : ContactUpdate
+        New values for the contact.
+    token : str, optional
+        JWT access token.
 
-    Returns:
-        Optional[Contact]: The updated contact if found and updated, otherwise None.
+    Returns
+    -------
+    Optional[Contact]
+        The updated contact instance.
+
+    Raises
+    ------
+    HTTPException
+        If the contact is not found or not owned by the user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    db_contact = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
-    if db_contact:
-        for key, value in contact.model_dump(exclude_unset=True).items():
-            setattr(db_contact, key, value)
-        db.commit()
-        db.refresh(db_contact)
-    return db_contact
+    user_id = _get_user_id(token)
+    obj = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
+    if not obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+
+    # Apply updates
+    obj.first_name = contact.first_name
+    obj.last_name = contact.last_name
+    obj.email = contact.email
+    obj.phone = contact.phone
+    obj.birthday = contact.birthday
+    obj.extra = contact.extra
+    db.commit()
+    db.refresh(obj)
+    return obj
 
 
 def delete_contact(db: Session, contact_id: int, token: str = None) -> bool:
-    """
-    Delete a contact.
+    """Delete a contact owned by the current user.
 
-    Args:
-        db (Session): The database session.
-        contact_id (int): The ID of the contact to delete.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    contact_id : int
+        Contact id to delete.
+    token : str, optional
+        JWT access token.
 
-    Returns:
-        bool: True if the contact was deleted, otherwise False.
+    Returns
+    -------
+    bool
+        True if deletion succeeded.
+
+    Raises
+    ------
+    HTTPException
+        If the contact does not exist or is not owned by the user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    db_contact = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
-    if db_contact:
-        db.delete(db_contact)
-        db.commit()
-        return True
-    return False
+    user_id = _get_user_id(token)
+    obj = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == user_id).first()
+    if not obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+    db.delete(obj)
+    db.commit()
+    return True
 
 
 def search_contacts(db: Session, query: str, token: str = None) -> List[Contact]:
-    """
-    Search contacts by first name, last name, or email.
+    """Search contacts by first name, last name, email, or phone for the current user.
 
-    Args:
-        db (Session): The database session.
-        query (str): The search query.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    query : str
+        Case-insensitive search term.
+    token : str, optional
+        JWT access token.
 
-    Returns:
-        List[Contact]: A list of contacts matching the search query.
+    Returns
+    -------
+    List[Contact]
+        Matching contacts owned by the user.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
-    return db.query(Contact).filter(
-        Contact.user_id == user_id,
-        or_(
-            Contact.first_name.ilike(f"%{query}%"),
-            Contact.last_name.ilike(f"%{query}%"),
-            Contact.email.ilike(f"%{query}%"),
+    user_id = _get_user_id(token)
+    q = f"%{query}%"
+    return (
+        db.query(Contact)
+        .filter(
+            Contact.user_id == user_id,
+            or_(
+                Contact.first_name.ilike(q),
+                Contact.last_name.ilike(q),
+                Contact.email.ilike(q),
+                Contact.phone.ilike(q),
+            ),
         )
-    ).all()
+        .all()
+    )
 
 
 def get_upcoming_birthdays(db: Session, token: str = None) -> List[Contact]:
-    """
-    Get contacts with upcoming birthdays in the next 7 days.
+    """Get contacts whose birthdays fall within the next 7 days.
 
-    Args:
-        db (Session): The database session.
-        token (str, optional): The access token of the user.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session.
+    token : str, optional
+        JWT access token.
 
-    Returns:
-        List[Contact]: A list of contacts with upcoming birthdays.
+    Returns
+    -------
+    List[Contact]
+        Contacts with birthdays in the upcoming week.
     """
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user_id = payload.get("user_id")
+    user_id = _get_user_id(token)
     today = date.today()
     next_week = today + timedelta(days=7)
-    contacts = db.query(Contact).filter(Contact.user_id == user_id).all()
-    upcoming: List[Contact] = []
-    for c in contacts:
-        # Normalize birthday to current year
-        bday_this_year = c.birthday.replace(year=today.year)
-        # Handle new year wrap: if already passed, check next year
-        if bday_this_year < today:
-            bday_this_year = c.birthday.replace(year=today.year + 1)
-        if today <= bday_this_year <= next_week:
-            upcoming.append(c)
-    return upcoming
+
+    # Compare month/day portion. For simplicity with SQLite, filter by range in year
+    # and refine in Python if necessary.
+    results = db.query(Contact).filter(Contact.user_id == user_id).all()
+
+    def _is_upcoming(bday: date) -> bool:
+        # Normalize year to current for comparison by month/day
+        try:
+            normalized = date(today.year, bday.month, bday.day)
+        except ValueError:
+            # Handle Feb 29 in non-leap years: treat as Mar 1
+            normalized = date(today.year, 3, 1)
+        return today <= normalized <= next_week
+
+    return [c for c in results if _is_upcoming(c.birthday)]
